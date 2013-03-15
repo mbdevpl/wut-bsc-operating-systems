@@ -1,0 +1,73 @@
+
+void read_from_fifo(int fifo);
+int write_to_fifo(int fifo, int file, char* svname, int delay);
+
+int write_to_fifo(int fifo, int file, char* svname, int delay){
+	//ssize_t count;
+	char buffer[PIPE_BUF];
+	char *buf;
+	int total_read = 0;
+	packet header;
+	int total_packets = 0;
+	
+	header.pid = getpid();
+	strcpy(header.filename, svname);
+	//header.n = bulk_read(file, buf, SIZE_BODY);
+	
+	*((packet *)buffer) = header;
+	buf = buffer + SIZE_HEAD;
+	
+	do{
+		header.n = bulk_read(file, buf, SIZE_BODY);
+		header.pos = total_read;
+		total_read += header.n;
+		
+		fprintf(stdout, "sending packet no.%d (len = %d)...\n",
+			total_packets + 1, header.n);
+		
+		if(header.n < 0){
+			perror("Read:");
+			exit(EXIT_FAILURE);
+		}
+		//fprintf(stdout, "O.K.\n");
+		if(header.n < SIZE_BODY)
+			memset(buf + header.n, 0, SIZE_BODY - header.n);
+		fprintf(stdout, "O.K.\n");
+		if(header.n > 0){
+			if(bulk_write(fifo,buffer,PIPE_BUF,delay)<0){
+				perror("Write:");
+				exit(EXIT_FAILURE);
+			}
+		}
+		//fprintf(stdout, "O.K.\n");
+		total_packets ++;
+		fprintf(stdout, "sent packet no.%d...\n", total_packets);
+	}while(header.n == SIZE_BODY);
+	
+	return total_packets;
+}
+
+void read_from_fifo(int fifo){
+	ssize_t count, i;
+	char buffer[PIPE_BUF];
+	char filehead[128];
+	packet header;
+	
+	do{
+		count=bulk_read(fifo,buffer,PIPE_BUF);
+		if(count<0){
+			perror("Read:");
+			exit(EXIT_FAILURE);
+		}
+		fprintf(stdout, "O.K.\n");
+		if(count>0){
+			header = *((packet*)buffer);
+			snprintf(filehead,128,"pid=%d filename=%s pos=%d n=%d\n",
+				header.pid, header.filename, header.pos, header.n);
+			
+			i=filter_buffer(buffer+sizeof(packet),SIZE_BODY);
+			append_to_file(header.filename,buffer+sizeof(packet),i);
+		}
+	}while(count==PIPE_BUF);
+}
+
